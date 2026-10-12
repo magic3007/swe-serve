@@ -29,6 +29,7 @@
   "profiles": {
     "h100_1": {"gpu_family": "hopper", "gpu_name_contains": "H100", "allocation_gpus": 1, "tp_size": 1, "online_quantization": "fp8"},
     "h100_4": {"gpu_family": "hopper", "gpu_name_contains": "H100", "allocation_gpus": 4, "tp_size": 4, "online_quantization": null},
+    "h200_1": {"gpu_family": "hopper", "gpu_name_contains": "H200", "allocation_gpus": 1, "tp_size": 1, "online_quantization": "fp8"},
     "gb200_1_logical": {"gpu_family": "blackwell", "gpu_name_contains": "GB200", "allocation_gpus": 4, "tp_size": 1, "logical_gpus": 1, "online_quantization": null},
     "gb200_4": {"gpu_family": "blackwell", "gpu_name_contains": "GB200", "allocation_gpus": 4, "tp_size": 4, "online_quantization": null},
     "gb300_1": {"gpu_family": "blackwell", "gpu_name_contains": "GB300", "allocation_gpus": 1, "tp_size": 1, "online_quantization": null}

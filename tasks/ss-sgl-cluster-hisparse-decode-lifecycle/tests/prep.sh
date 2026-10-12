@@ -6,6 +6,7 @@ export HOME=/tmp
 export SWE_SERVE_HARDWARE_PROFILE="${SWE_SERVE_HARDWARE_PROFILE:-h100_1}"
 case "$SWE_SERVE_HARDWARE_PROFILE" in
     h100_1) expected_gpu=H100 ;;
+    h200_1) expected_gpu=H200 ;;
     gb300_1) expected_gpu=GB300 ;;
     *) echo "FATAL: unsupported HiSparse hardware profile: $SWE_SERVE_HARDWARE_PROFILE" >&2; return 1 ;;
 esac

@@ -40,7 +40,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parent
-PROFILE = "h100_1"
+DEFAULT_PROFILE = "h100_1"
 CLOSED_BOOK = ROOT / "closed_book"
 _LFS_MAGIC = b"version https://git-lfs.github.com/spec/v1"
 _ENV_REF = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
@@ -75,13 +75,13 @@ def _lfs_pointer(task_dir):
     return None
 
 
-def _profile_env_defaults(task_dir, env):
+def _profile_env_defaults(task_dir, env, profile):
     """Supply the hardware-profile variables a task interpolates in [environment.env].
 
     Harbor substitutes ``${VAR}`` values from the launching shell and aborts with
     "Missing Environment Variables" when one is unset. Every such variable in the
     roster names a hardware profile (``*_PROFILE``) and expects the same value as
-    SWE_SERVE_HARDWARE_PROFILE, so default those to PROFILE unless the caller set
+    SWE_SERVE_HARDWARE_PROFILE, so default those to ``profile`` unless the caller set
     them. Anything else is left to Harbor, with a warning naming the variable.
     Returns the (name, value) pairs supplied, for the echoed command line.
     """
@@ -94,8 +94,8 @@ def _profile_env_defaults(task_dir, env):
             continue
         name = match.group(1)
         if name.endswith("_PROFILE"):
-            env[name] = PROFILE
-            supplied.append((name, PROFILE))
+            env[name] = profile
+            supplied.append((name, profile))
         else:
             print(
                 f"warning: {task_dir.name} reads ${{{name}}} from your shell and it is unset; "
@@ -241,6 +241,7 @@ def _harbor_executable():
 _HELPER_VALUE_OPTIONS = {
     "--agent",
     "--model",
+    "--profile",
     "--cache-root",
     "--jobs-dir",
     "--job-name",
@@ -411,15 +412,16 @@ def _compose(task_id, args, base_env, roster, harbor_args, requirements, job_nam
 
     if int(row["gpus"]) > 0:
         cmd += ["--environment-import-path", "scripts.gpu_env:GpuDockerEnvironment"]
+        profile = args.profile
         if "SWE_SERVE_HARDWARE_PROFILE" not in env:
-            env["SWE_SERVE_HARDWARE_PROFILE"] = PROFILE
-            supplied.append(("SWE_SERVE_HARDWARE_PROFILE", PROFILE))
+            env["SWE_SERVE_HARDWARE_PROFILE"] = profile
+            supplied.append(("SWE_SERVE_HARDWARE_PROFILE", profile))
         mounts = []
 
         view = _asset_view(requirements, task_id)
         if view is not None:
             cache_root = args.cache_root
-            view_dir = cache_root / "views" / PROFILE / view
+            view_dir = cache_root / "views" / profile / view
             _prepare_assets(task_id, cache_root, env, args.dry_run)
             if not args.dry_run and not view_dir.is_dir():
                 raise HelperError(f"missing verified cache view after preparation: {view_dir}")
@@ -439,7 +441,7 @@ def _compose(task_id, args, base_env, roster, harbor_args, requirements, job_nam
             cmd += ["--environment-kwarg", f"shared_mounts_json={payload}"]
 
     cmd += harbor_args
-    supplied += _profile_env_defaults(task_dir, env)
+    supplied += _profile_env_defaults(task_dir, env, args.profile)
     return cmd, env, supplied, audit_dir
 
 
@@ -740,6 +742,12 @@ def main(argv=None):
     selection.add_argument("--gpu-only", dest="gpus", action="store_const", const=1, help="run all GPU tasks")
     parser.add_argument("--agent", default="oracle", help="harbor agent name (default: oracle)")
     parser.add_argument("--model", help="model name for LLM agents")
+    parser.add_argument(
+        "--profile",
+        default=DEFAULT_PROFILE,
+        help=f"GPU hardware profile exported to the task (default: {DEFAULT_PROFILE}); "
+        "use h200_1 for H200 hosts",
+    )
     cache_default = os.environ.get("HF_HOME") or str(
         Path(os.environ.get("XDG_CACHE_HOME") or "~/.cache") / "huggingface"
     )

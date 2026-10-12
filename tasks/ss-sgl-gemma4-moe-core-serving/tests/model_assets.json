@@ -61,6 +61,14 @@
       "primary_asset": "moe_native",
       "server_args": []
     },
+    "h200_1": {
+      "gpu_family": "hopper",
+      "gpu_name_contains": "H200",
+      "allocation_gpus": 1,
+      "tp_size": 1,
+      "primary_asset": "moe_native",
+      "server_args": []
+    },
     "gb200_1_logical": {
       "gpu_family": "blackwell",
       "gpu_name_contains": "GB200",

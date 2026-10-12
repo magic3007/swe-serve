@@ -14,9 +14,9 @@ gpu_model = "h100"
 gpu_count = 1
 requires_multi_gpu = false
 requires_blackwell = false
-hardware_tags = ["nvidia", "hopper", "blackwell", "sm90", "sm100", "sm103", "h100", "gb200", "gb300", "single-gpu", "single-node", "profiled"]
+hardware_tags = ["nvidia", "hopper", "blackwell", "sm90", "sm100", "sm103", "h100", "h200", "gb200", "gb300", "single-gpu", "single-node", "profiled"]
 supports_multi_gpu_profiles = true
-hardware_profiles = ["h100_1", "h100_4", "gb200_1_logical", "gb200_4", "gb300_1"]
+hardware_profiles = ["h100_1", "h100_4", "h200_1", "gb200_1_logical", "gb200_4", "gb300_1"]
 max_gpu_count = 4
 single_node_only = true
 
