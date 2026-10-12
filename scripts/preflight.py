@@ -31,6 +31,7 @@ TASK_SET_PATH = REPO_ROOT / "task_list.csv"
 NO_ASSETS = "no_external_assets"
 READINESS_NAME = "readiness.json"
 PROFILE_BY_GPUS = {"0": "cpu", "1": "h100_1"}
+SELECTABLE_PROFILES = ("cpu", "h100_1", "h200_1")
 _READINESS_IDENTITY = ("schema_version", "manifest_sha256", "requirements_sha256")
 _READINESS_REQUIREMENTS = ("schema_version", "task_manifest", "tasks", "views", "assets")
 _REGISTRY_MANIFEST_ACCEPT = ", ".join(
@@ -88,6 +89,7 @@ class ReleaseContract:
     task_set_path: Path
     roster: tuple[str, ...]
     profiles: dict[str, str]
+    profile: str
 
 
 @dataclass(frozen=True)
@@ -246,6 +248,7 @@ class HfPlan:
     views: dict[str, list[str]]
     missing: tuple[str, ...]
     facts: dict[str, dict[str, Any]]
+    profile: str
     required_bytes: int
     verify_only: bool
     reuse: bool
@@ -267,6 +270,7 @@ def load_release(
     path: Path = REQUIREMENTS_PATH,
     *,
     expected_task_set: Path | None = None,
+    profile: str | None = None,
 ) -> ReleaseContract:
     """Load and validate the single HF/data requirements and roster contract."""
     try:
@@ -304,7 +308,13 @@ def load_release(
         with task_set.open(encoding="utf-8", newline="") as source:
             rows = list(csv.DictReader(source, strict=True))
         roster = tuple(row["task_id"] for row in rows)
-        profiles = {row["task_id"]: PROFILE_BY_GPUS[row["gpus"]] for row in rows}
+        default_profiles = {row["task_id"]: PROFILE_BY_GPUS[row["gpus"]] for row in rows}
+        cpu_profile = PROFILE_BY_GPUS["0"]
+        gpu_profile = profile or PROFILE_BY_GPUS["1"]
+        profiles = {
+            task_id: default if default == cpu_profile else gpu_profile
+            for task_id, default in default_profiles.items()
+        }
     except (OSError, UnicodeError, csv.Error, KeyError, TypeError) as exc:
         raise RequirementsError(f"authoritative task CSV is unreadable: {task_set}: {exc}") from exc
     if hashlib.sha256(task_set_raw).hexdigest() != expected_sha256:
@@ -327,6 +337,7 @@ def load_release(
         task_set_path=task_set.resolve(),
         roster=roster,
         profiles=profiles,
+        profile=gpu_profile,
     )
 
 
@@ -709,10 +720,12 @@ def _view_links(
     return links
 
 
-def _view_path(cache_root: Path, view_id: str) -> Path:
+def _view_path(cache_root: Path, view_id: str, profile: str) -> Path:
     if not view_id or view_id in {".", ".."} or Path(view_id).name != view_id:
         raise RequirementsError(f"view ID must be a path leaf: {view_id!r}")
-    return cache_root / "views" / "h100_1" / view_id
+    if not profile or profile in {".", ".."} or Path(profile).name != profile:
+        raise RequirementsError(f"profile must be a path leaf: {profile!r}")
+    return cache_root / "views" / profile / view_id
 
 
 def _within(path: Path, root: Path) -> bool:
@@ -771,12 +784,16 @@ def _hardlink_view_path(source: Path, target: Path, preserve_symlinks: bool) -> 
 
 
 def _build_view(
-    cache_root: Path, view_id: str, asset_ids: Sequence[str], requirements: dict[str, Any]
+    cache_root: Path,
+    view_id: str,
+    asset_ids: Sequence[str],
+    requirements: dict[str, Any],
+    profile: str,
 ) -> None:
     for asset_id in asset_ids:
         _prepare_main_ref(cache_root, asset_id, requirements["assets"][asset_id])
         _prepare_no_exist(cache_root, asset_id, requirements["assets"][asset_id])
-    view = _view_path(cache_root, view_id)
+    view = _view_path(cache_root, view_id, profile)
     if view.exists() or view.is_symlink():
         shutil.rmtree(view) if view.is_dir() and not view.is_symlink() else view.unlink()
     view.mkdir(parents=True)
@@ -785,11 +802,15 @@ def _build_view(
 
 
 def _validate_view(
-    cache_root: Path, view_id: str, asset_ids: Sequence[str], requirements: dict[str, Any]
+    cache_root: Path,
+    view_id: str,
+    asset_ids: Sequence[str],
+    requirements: dict[str, Any],
+    profile: str,
 ) -> None:
-    view = _view_path(cache_root, view_id)
+    view = _view_path(cache_root, view_id, profile)
     if not view.is_dir():
-        raise MissingAssetError(f"missing ready view: views/h100_1/{view_id}")
+        raise MissingAssetError(f"missing ready view: views/{profile}/{view_id}")
     for asset_id in asset_ids:
         _validate_main_ref(cache_root, asset_id, requirements["assets"][asset_id])
         _validate_no_exist(cache_root, asset_id, requirements["assets"][asset_id])
@@ -845,7 +866,7 @@ def task_facts(
             tasks[task_id] = {
                 "status": "ready",
                 "profile": profiles[task_id],
-                "ready_view": f"views/h100_1/{selection['view']}",
+                "ready_view": f"views/{profiles[task_id]}/{selection['view']}",
                 "assets": [
                     {
                         "repository": requirements["assets"][asset_id]["repository"],
@@ -1045,7 +1066,7 @@ def dry_run_plan(
         {
             "task_id": task_id,
             "profile": profiles[task_id],
-            "ready_view": f"views/h100_1/{_selection(requirements, task_id)['view']}",
+            "ready_view": f"views/{profiles[task_id]}/{_selection(requirements, task_id)['view']}",
         }
         for task_id in task_ids
         if _selection(requirements, task_id) is not None
@@ -1401,6 +1422,7 @@ def precheck(
     *,
     verify_only: bool,
     token: str | None,
+    profile: str,
 ) -> HfPlan:
     """Validate local state and remote access without transferring HF/data."""
     asset_ids, views = _selected(requirements, task_ids)
@@ -1433,7 +1455,7 @@ def precheck(
         view_errors: dict[str, PreflightError] = {}
         for view_id, view_assets in views.items():
             try:
-                _validate_view(cache_root, view_id, view_assets, requirements)
+                _validate_view(cache_root, view_id, view_assets, requirements, profile)
             except PreflightError as error:
                 view_errors[view_id] = error
         if view_errors:
@@ -1456,6 +1478,7 @@ def precheck(
             views=views,
             missing=(),
             facts=facts,
+            profile=profile,
             required_bytes=0,
             verify_only=True,
             reuse=True,
@@ -1474,7 +1497,7 @@ def precheck(
     if reuse:
         try:
             for view_id, view_assets in views.items():
-                _validate_view(cache_root, view_id, view_assets, requirements)
+                _validate_view(cache_root, view_id, view_assets, requirements, profile)
         except PreflightError as exc:
             print(f"[rebuild] {exc}", file=sys.stderr)
             reuse = False
@@ -1543,6 +1566,7 @@ def precheck(
         views=views,
         missing=tuple(missing),
         facts=facts,
+        profile=profile,
         required_bytes=sum(sizes.values()),
         verify_only=False,
         reuse=reuse,
@@ -1570,8 +1594,8 @@ def stage(plan: HfPlan) -> dict[str, dict[str, Any]]:
             ) from exc
         _validate_asset(plan.cache_root, asset_id, asset)
     for view_id, view_assets in plan.views.items():
-        _build_view(plan.cache_root, view_id, view_assets, plan.requirements)
-        _validate_view(plan.cache_root, view_id, view_assets, plan.requirements)
+        _build_view(plan.cache_root, view_id, view_assets, plan.requirements, plan.profile)
+        _validate_view(plan.cache_root, view_id, view_assets, plan.requirements, plan.profile)
     print(f"[ready] {len(plan.task_ids)} task(s), {len(plan.asset_ids)} unique pinned asset(s)")
     return plan.facts
 
@@ -1628,6 +1652,7 @@ def prepare_or_verify(
     *,
     verify_only: bool,
     token: str | None,
+    profile: str,
     image_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Precheck, stage, and record one selected HF/data preparation."""
@@ -1641,6 +1666,7 @@ def prepare_or_verify(
             cache_root,
             verify_only=verify_only,
             token=token,
+            profile=profile,
         )
         try:
             if image_plan is None:
@@ -1683,8 +1709,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--task", action="append", default=[], help="selected task filter; repeatable")
     parser.add_argument(
         "--profile",
-        choices=tuple(PROFILE_BY_GPUS.values()),
-        help="CSV-derived release profile filter",
+        choices=SELECTABLE_PROFILES,
+        help="release profile filter; h200_1 prepares and selects the H200 GPU profile",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--dry-run", action="store_true", help="print the plan without calls or writes")
@@ -1696,7 +1722,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     token = None if args.verify_only else os.environ.get("HF_TOKEN") or None
     try:
-        release = load_release(expected_task_set=TASK_SET_PATH)
+        release = load_release(expected_task_set=TASK_SET_PATH, profile=args.profile)
         selected = select_tasks(release.roster, release.profiles, args.task, args.profile)
         if not selected:
             raise RequirementsError("task and profile filters select no release tasks")
@@ -1737,6 +1763,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     cache_root,
                     verify_only=args.verify_only,
                     token=token,
+                    profile=release.profile,
                     image_plan=image_plan,
                 )
             except PreflightError as error:

@@ -54,6 +54,12 @@
       "allocation_gpus": 4,
       "tp_size": 4
     },
+    "h200_1": {
+      "gpu_family": "hopper",
+      "gpu_name_contains": "H200",
+      "allocation_gpus": 1,
+      "tp_size": 1
+    },
     "gb200_1_logical": {
       "gpu_family": "blackwell",
       "gpu_name_contains": "GB200",

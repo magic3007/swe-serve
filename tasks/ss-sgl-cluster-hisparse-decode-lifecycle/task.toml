@@ -14,8 +14,8 @@ gpu_model = "h100"
 gpu_count = 1
 requires_multi_gpu = false
 requires_blackwell = false
-hardware_tags = ["nvidia", "hopper", "blackwell", "sm90", "sm103", "h100", "gb300", "single-gpu", "profiled"]
-hardware_profiles = ["h100_1", "gb300_1"]
+hardware_tags = ["nvidia", "hopper", "blackwell", "sm90", "sm103", "h100", "h200", "gb300", "single-gpu", "profiled"]
+hardware_profiles = ["h100_1", "h200_1", "gb300_1"]
 
 [verifier]
 environment_mode = "separate"

@@ -7,7 +7,8 @@
 # Every GPU task in the roster declares [environment].gpus = 1, and several
 # verifiers assert that the container sees exactly that many devices. A
 # reservation of `all` hands a multi-GPU host's entire set to the container and
-# fails those tasks at verifier setup ("profile h100_1 requires 1 GPUs, got 2").
+# fails those tasks at verifier setup ("profile h100_1 requires 1 GPUs, got 2";
+# the selected profile name comes from the verifier's SWE_SERVE_HARDWARE_PROFILE).
 services:
   main:
     deploy:
